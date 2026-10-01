@@ -1,4 +1,4 @@
-library flutter_map_navigator;
+library;
 
 // Core Engine Facade
 export 'src/flutter_route_engine.dart';

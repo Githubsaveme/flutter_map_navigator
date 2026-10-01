@@ -113,7 +113,11 @@ class _MapNavigatorViewState extends State<MapNavigatorView> {
                   points: p.points,
                   color: p.color.withValues(alpha: p.opacity),
                   strokeWidth: p.width,
-                  isDotted: p.pattern == sdk_polyline.PolylinePattern.dotted,
+                  pattern: p.pattern == sdk_polyline.PolylinePattern.dotted
+                      ? StrokePattern.dashed(segments: const [2, 4])
+                      : (p.pattern == sdk_polyline.PolylinePattern.dashed
+                          ? StrokePattern.dashed(segments: const [10, 5])
+                          : const StrokePattern.solid()),
                 );
               }).toList(),
             ),
