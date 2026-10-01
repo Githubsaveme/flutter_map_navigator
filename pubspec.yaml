@@ -1,7 +1,7 @@
 name: flutter_map_navigator
 description: "A production-grade, open-source Flutter navigation plugin and SDK with background tracking, turn-by-turn navigation, rerouting, voice, and vehicle tracking."
 version: 0.0.1
-homepage: https://github.com/example/flutter_map_navigator
+homepage: https://github.com/Githubsaveme/flutter_map_navigator.git
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
