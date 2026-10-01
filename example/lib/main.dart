@@ -29,14 +29,15 @@ class _NavigationDemoAppState extends State<NavigationDemoApp> {
   );
 
   LocationPermissionStatus _permStatus = LocationPermissionStatus.unknown;
-  List<SearchResult> _searchResults = [];
   Map<String, dynamic> _diagnosticReport = {};
 
   final TextEditingController _originController = TextEditingController(text: '30.9010, 75.8573');
   final TextEditingController _destinationController = TextEditingController(text: '30.7333, 76.7794');
-  final TextEditingController _searchController = TextEditingController();
 
-  bool _showDebugPanel = true;
+  bool _showDebugPanel = false;
+  bool _showTopNavBanner = true;
+  bool _showPolylines = true;
+  bool _isBottomCardExpanded = false;
 
   @override
   void initState() {
@@ -45,8 +46,10 @@ class _NavigationDemoAppState extends State<NavigationDemoApp> {
   }
 
   Future<void> _initEngine() async {
-    _permStatus = await _engine.permissions.locationStatus();
+    // 1. Request location permission & enable service
+    _permStatus = await _engine.permissions.requestLocation();
 
+    // 2. Listen to continuous location stream
     _engine.location.stream.listen((loc) {
       if (mounted) setState(() => _currentLocation = loc);
     });
@@ -54,6 +57,12 @@ class _NavigationDemoAppState extends State<NavigationDemoApp> {
     _engine.navigation.stateStream.listen((state) {
       if (mounted) setState(() => _navState = state);
     });
+
+    // 3. Get immediate initial fix
+    try {
+      final initialLoc = await _engine.location.current();
+      if (mounted) setState(() => _currentLocation = initialLoc);
+    } catch (_) {}
 
     _updateBgStatus();
     _refreshDiagnostics();
@@ -69,11 +78,39 @@ class _NavigationDemoAppState extends State<NavigationDemoApp> {
     if (mounted) setState(() => _diagnosticReport = report);
   }
 
+  Future<void> _navigateToLocation(LatLng dest, String name) async {
+    final startLatLng = _currentLocation?.toLatLng() ?? const LatLng(30.9010, 75.8573);
+
+    // Add Destination Marker
+    _engine.markers.add(MapMarker(
+      id: 'destination_marker',
+      position: dest,
+      type: MarkerType.destination,
+      icon: const Icon(Icons.location_on, color: Colors.redAccent, size: 48.0),
+    ));
+
+    // Calculate Route
+    final route = await _engine.routing.calculateRoute(
+      origin: startLatLng,
+      destination: dest,
+    );
+
+    // Draw Polyline & Start Navigation
+    _engine.polylines.add(MapPolyline(
+      id: 'active_route',
+      points: route.geometry,
+      color: Colors.blueAccent,
+      width: 6.0,
+    ));
+
+    await _engine.navigation.start(route);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Flutter Map Navigator SDK'),
+        title: const Text('Flutter Map Navigator'),
         actions: [
           IconButton(
             icon: Icon(_showDebugPanel ? Icons.bug_report : Icons.bug_report_outlined),
@@ -83,44 +120,50 @@ class _NavigationDemoAppState extends State<NavigationDemoApp> {
       ),
       body: Stack(
         children: [
-          // 1. Core Map View
+          // 1. Core Map View with Map Taps Disabled as requested
           MapNavigatorView(
             mapEngine: _engine.map,
             trackingEngine: _engine.tracking,
             markerEngine: _engine.markers,
             vehicleEngine: _engine.vehicles,
             polylineEngine: _engine.polylines,
-            onMapTap: (point) {
-              _engine.markers.add(MapMarker(
-                id: 'tap_marker_${point.latitude}',
-                position: point,
-                icon: const Icon(Icons.location_on, color: Colors.purple, size: 36),
-              ));
-            },
+            showControls: false, // Moved controls to bottom collapsible card
+            onMapTap: null,       // Map tap disabled
           ),
 
-          // 2. Navigation HUD Overlay
-          NavigationHudView(
-            state: _navState,
-            isFreeCamera: _engine.tracking.cameraMode == CameraFollowMode.free,
-            onReCenter: () {
-              setState(() => _engine.tracking.cameraMode = CameraFollowMode.navigation);
-            },
-            onToggleMute: () {
-              _engine.voice.isEnabled ? _engine.voice.disable() : _engine.voice.enable();
-            },
-            onStopNavigation: () {
-              _engine.navigation.stop();
-              _engine.polylines.clear();
-            },
+          // 2. Top Turn-by-Turn Instruction Banner (Hideable via bottom control)
+          if (_showTopNavBanner)
+            NavigationHudView(
+              state: _navState,
+              isFreeCamera: _engine.tracking.cameraMode == CameraFollowMode.free,
+              onSearchTap: () => _openSearchDelegate(context),
+              onReCenter: () {
+                setState(() => _engine.tracking.cameraMode = CameraFollowMode.navigation);
+              },
+              onToggleMute: () {
+                _engine.voice.isEnabled ? _engine.voice.disable() : _engine.voice.enable();
+                setState(() {});
+              },
+              onStopNavigation: () {
+                _engine.navigation.stop();
+                _engine.polylines.clear();
+                _engine.markers.remove('destination_marker');
+              },
+            ),
+
+          // 3. Collapsible Bottom Control Card (Contains Zoom In/Out, Polyline, Audio, Styles, Upper Banner Toggle)
+          Positioned(
+            left: 12.0,
+            right: 12.0,
+            bottom: _showDebugPanel ? 130.0 : 16.0,
+            child: _buildBottomControlCard(),
           ),
 
-          // 3. Floating Debug Diagnostics Panel
+          // 4. Debug Panel (Optional)
           if (_showDebugPanel) _buildDebugPanel(),
         ],
       ),
 
-      // Control Drawer
       drawer: Drawer(
         child: ListView(
           children: [
@@ -132,14 +175,14 @@ class _NavigationDemoAppState extends State<NavigationDemoApp> {
                   Icon(Icons.map, color: Colors.white, size: 48),
                   SizedBox(height: 8),
                   Text('Navigation SDK', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
-                  Text('Production SDK Controls', style: TextStyle(color: Colors.white70)),
+                  Text('Production Controls', style: TextStyle(color: Colors.white70)),
                 ],
               ),
             ),
             ListTile(
               leading: const Icon(Icons.security),
               title: Text('Permission: ${_permStatus.name}'),
-              subtitle: const Text('Tap to request location permission'),
+              subtitle: const Text('Request location permissions'),
               onTap: () async {
                 final status = await _engine.permissions.requestLocation();
                 setState(() => _permStatus = status);
@@ -159,35 +202,16 @@ class _NavigationDemoAppState extends State<NavigationDemoApp> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.layers),
-              title: const Text('Map Style'),
-              trailing: PopupMenuButton<MapStylePreset>(
-                onSelected: (preset) {
-                  if (preset == MapStylePreset.satellite) _engine.map.setStyle(MapStyle.satellite);
-                  if (preset == MapStylePreset.dark) _engine.map.setStyle(MapStyle.dark);
-                  if (preset == MapStylePreset.standard) _engine.map.setStyle(MapStyle.standard);
-                },
-                itemBuilder: (context) => const [
-                  PopupMenuItem(value: MapStylePreset.standard, child: Text('Standard (OSM)')),
-                  PopupMenuItem(value: MapStylePreset.satellite, child: Text('Satellite')),
-                  PopupMenuItem(value: MapStylePreset.dark, child: Text('Dark Mode')),
-                ],
-              ),
-            ),
-            const Divider(),
-            ListTile(
               leading: const Icon(Icons.alt_route),
-              title: const Text('Route & Navigation Planner'),
-              onTap: () => _showRoutePlannerDialog(context),
-            ),
-            ListTile(
-              leading: const Icon(Icons.search),
-              title: const Text('Search & Geocoding'),
-              onTap: () => _showSearchDialog(context),
+              title: const Text('Manual Route Planner'),
+              onTap: () {
+                Navigator.pop(context);
+                _showRoutePlannerDialog(context);
+              },
             ),
             ListTile(
               leading: const Icon(Icons.directions_car),
-              title: const Text('Simulate Vehicle Fleet'),
+              title: const Text('Add Fleet Vehicles'),
               onTap: () {
                 _engine.vehicles.add(Vehicle(
                   id: 'truck_101',
@@ -211,12 +235,12 @@ class _NavigationDemoAppState extends State<NavigationDemoApp> {
             ),
             ListTile(
               leading: const Icon(Icons.settings),
-              title: const Text('Open System Settings'),
+              title: const Text('System Settings'),
               onTap: () => _engine.permissions.openSettings(),
             ),
             ListTile(
               leading: const Icon(Icons.analytics),
-              title: const Text('Run Diagnostics'),
+              title: const Text('Diagnostics Report'),
               onTap: () async {
                 await _refreshDiagnostics();
                 if (context.mounted) {
@@ -236,9 +260,210 @@ class _NavigationDemoAppState extends State<NavigationDemoApp> {
     );
   }
 
+  Widget _buildBottomControlCard() {
+    return Card(
+      elevation: 8.0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20.0)),
+      color: Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Collapsed Header Row
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8.0),
+                  decoration: BoxDecoration(
+                    color: Colors.blueAccent.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.navigation, color: Colors.blueAccent, size: 24.0),
+                ),
+                const SizedBox(width: 12.0),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _navState.status != NavigationStatus.idle
+                            ? (_navState.activeRoute != null
+                                ? '${_navState.formattedDistanceRemaining} remaining'
+                                : 'Navigating')
+                            : '${_currentLocation?.speedKmh.toStringAsFixed(0) ?? "0"} km/h',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16.0),
+                      ),
+                      Text(
+                        _navState.status != NavigationStatus.idle
+                            ? 'Maneuver: ${_navState.formattedDistanceToNextManeuver}'
+                            : 'Tap arrow to open controls',
+                        style: TextStyle(color: Colors.grey.shade600, fontSize: 13.0),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Audio Mute Toggle Button
+                IconButton(
+                  icon: Icon(
+                    _engine.voice.isEnabled ? Icons.volume_up : Icons.volume_off,
+                    color: _engine.voice.isEnabled ? Colors.blueAccent : Colors.grey,
+                  ),
+                  onPressed: () {
+                    _engine.voice.isEnabled ? _engine.voice.disable() : _engine.voice.enable();
+                    setState(() {});
+                  },
+                ),
+
+                // Expand / Collapse Toggle Button
+                IconButton(
+                  icon: Icon(
+                    _isBottomCardExpanded ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up,
+                    color: Colors.black87,
+                    size: 28.0,
+                  ),
+                  onPressed: () {
+                    setState(() => _isBottomCardExpanded = !_isBottomCardExpanded);
+                  },
+                ),
+              ],
+            ),
+
+            // Expanded Controls Grid Panel
+            if (_isBottomCardExpanded) ...[
+              const Divider(height: 20.0),
+              Wrap(
+                alignment: WrapAlignment.spaceEvenly,
+                spacing: 12.0,
+                runSpacing: 12.0,
+                children: [
+                  // Re-Center Button
+                  _buildControlIconButton(
+                    icon: Icons.my_location,
+                    label: 'Re-Center',
+                    color: Colors.blueAccent,
+                    onPressed: () {
+                      _engine.tracking.cameraMode = CameraFollowMode.navigation;
+                      setState(() {});
+                    },
+                  ),
+
+                  // Map Style Switcher
+                  _buildControlIconButton(
+                    icon: Icons.layers,
+                    label: 'Map Style',
+                    color: Colors.purple,
+                    onPressed: () {
+                      if (_engine.map.currentStyle.preset == MapStylePreset.standard) {
+                        _engine.map.setStyle(MapStyle.satellite);
+                      } else if (_engine.map.currentStyle.preset == MapStylePreset.satellite) {
+                        _engine.map.setStyle(MapStyle.dark);
+                      } else {
+                        _engine.map.setStyle(MapStyle.standard);
+                      }
+                      setState(() {});
+                    },
+                  ),
+
+                  // Polyline Visibility Toggle
+                  _buildControlIconButton(
+                    icon: _showPolylines ? Icons.route : Icons.route_outlined,
+                    label: _showPolylines ? 'Hide Route' : 'Show Route',
+                    color: _showPolylines ? Colors.green : Colors.grey,
+                    onPressed: () {
+                      setState(() => _showPolylines = !_showPolylines);
+                    },
+                  ),
+
+                  // Upper Navigation Banner Toggle
+                  _buildControlIconButton(
+                    icon: _showTopNavBanner ? Icons.visibility : Icons.visibility_off,
+                    label: _showTopNavBanner ? 'Hide Top HUD' : 'Show Top HUD',
+                    color: _showTopNavBanner ? Colors.indigo : Colors.grey,
+                    onPressed: () {
+                      setState(() => _showTopNavBanner = !_showTopNavBanner);
+                    },
+                  ),
+
+                  // Audio Mute Toggle
+                  _buildControlIconButton(
+                    icon: _engine.voice.isEnabled ? Icons.volume_up : Icons.volume_off,
+                    label: _engine.voice.isEnabled ? 'Mute Audio' : 'Unmute Audio',
+                    color: _engine.voice.isEnabled ? Colors.orange : Colors.grey,
+                    onPressed: () {
+                      _engine.voice.isEnabled ? _engine.voice.disable() : _engine.voice.enable();
+                      setState(() {});
+                    },
+                  ),
+
+                  // Stop Navigation Button
+                  if (_navState.status != NavigationStatus.idle)
+                    _buildControlIconButton(
+                      icon: Icons.close,
+                      label: 'Stop Nav',
+                      color: Colors.redAccent,
+                      onPressed: () {
+                        _engine.navigation.stop();
+                        _engine.polylines.clear();
+                        _engine.markers.remove('destination_marker');
+                        setState(() {});
+                      },
+                    ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildControlIconButton({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onPressed,
+  }) {
+    return InkWell(
+      onTap: onPressed,
+      borderRadius: BorderRadius.circular(12.0),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10.0),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: color, size: 22.0),
+            ),
+            const SizedBox(height: 4.0),
+            Text(label, style: const TextStyle(fontSize: 11.0, fontWeight: FontWeight.w500)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openSearchDelegate(BuildContext context) {
+    showSearch(
+      context: context,
+      delegate: _LocationSearchDelegate(
+        searchEngine: _engine.search,
+        onSelected: (result) {
+          _navigateToLocation(result.position, result.title);
+        },
+      ),
+    );
+  }
+
   Widget _buildDebugPanel() {
     return Positioned(
-      bottom: 90,
+      bottom: 20,
       left: 12,
       right: 12,
       child: Card(
@@ -288,16 +513,10 @@ class _NavigationDemoAppState extends State<NavigationDemoApp> {
           ElevatedButton(
             onPressed: () async {
               Navigator.pop(ctx);
-              final origParts = _originController.text.split(',');
               final destParts = _destinationController.text.split(',');
-
-              final origin = LatLng(double.parse(origParts[0].trim()), double.parse(origParts[1].trim()));
               final destination = LatLng(double.parse(destParts[0].trim()), double.parse(destParts[1].trim()));
 
-              final route = await _engine.routing.calculateRoute(origin: origin, destination: destination);
-
-              _engine.polylines.add(MapPolyline(id: 'planned_route', points: route.geometry, color: Colors.blue, width: 6));
-              await _engine.navigation.start(route);
+              _navigateToLocation(destination, 'Manual Route');
             },
             child: const Text('Start Navigation'),
           ),
@@ -305,53 +524,67 @@ class _NavigationDemoAppState extends State<NavigationDemoApp> {
       ),
     );
   }
+}
 
-  void _showSearchDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Search Locations'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _searchController,
-              decoration: const InputDecoration(labelText: 'Search query (e.g. Ludhiana)'),
-            ),
-            const SizedBox(height: 12),
-            ElevatedButton(
-              onPressed: () async {
-                final results = await _engine.search.query(_searchController.text);
-                setState(() => _searchResults = results);
+class _LocationSearchDelegate extends SearchDelegate<SearchResult?> {
+  final SearchEngine searchEngine;
+  final void Function(SearchResult result) onSelected;
+
+  _LocationSearchDelegate({
+    required this.searchEngine,
+    required this.onSelected,
+  });
+
+  @override
+  List<Widget>? buildActions(BuildContext context) {
+    return [
+      IconButton(icon: const Icon(Icons.clear), onPressed: () => query = ''),
+    ];
+  }
+
+  @override
+  Widget? buildLeading(BuildContext context) {
+    return IconButton(icon: const Icon(Icons.arrow_back), onPressed: () => close(context, null));
+  }
+
+  @override
+  Widget buildResults(BuildContext context) => _buildSearchResults();
+
+  @override
+  Widget buildSuggestions(BuildContext context) => _buildSearchResults();
+
+  Widget _buildSearchResults() {
+    if (query.trim().isEmpty) {
+      return const Center(child: Text('Type a location to search'));
+    }
+
+    return FutureBuilder<List<SearchResult>>(
+      future: searchEngine.query(query),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final results = snapshot.data ?? [];
+        if (results.isEmpty) {
+          return const Center(child: Text('No locations found'));
+        }
+
+        return ListView.builder(
+          itemCount: results.length,
+          itemBuilder: (context, index) {
+            final item = results[index];
+            return ListTile(
+              leading: const Icon(Icons.location_on, color: Colors.redAccent),
+              title: Text(item.title),
+              subtitle: Text(item.subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
+              onTap: () {
+                onSelected(item);
+                close(context, item);
               },
-              child: const Text('Search'),
-            ),
-            const SizedBox(height: 8),
-            SizedBox(
-              height: 180,
-              width: 300,
-              child: ListView.builder(
-                itemCount: _searchResults.length,
-                itemBuilder: (context, index) {
-                  final item = _searchResults[index];
-                  return ListTile(
-                    title: Text(item.title),
-                    subtitle: Text(item.subtitle, maxLines: 1),
-                    onTap: () {
-                      _engine.markers.add(MapMarker(
-                        id: 'search_res_$index',
-                        position: item.position,
-                        icon: const Icon(Icons.pin_drop, color: Colors.redAccent, size: 36),
-                      ));
-                      Navigator.pop(ctx);
-                    },
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
+            );
+          },
+        );
+      },
     );
   }
 }

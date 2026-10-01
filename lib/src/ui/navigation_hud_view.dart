@@ -5,6 +5,7 @@ import '../core/models/route.dart';
 /// Navigation Heads-Up Display (HUD) overlay widget.
 class NavigationHudView extends StatelessWidget {
   final NavigationState state;
+  final VoidCallback? onSearchTap;
   final VoidCallback? onReCenter;
   final VoidCallback? onToggleMute;
   final VoidCallback? onStopNavigation;
@@ -14,6 +15,7 @@ class NavigationHudView extends StatelessWidget {
   const NavigationHudView({
     super.key,
     required this.state,
+    this.onSearchTap,
     this.onReCenter,
     this.onToggleMute,
     this.onStopNavigation,
@@ -24,7 +26,39 @@ class NavigationHudView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (state.status == NavigationStatus.idle) {
-      return const SizedBox.shrink();
+      return SafeArea(
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Material(
+              elevation: 6.0,
+              borderRadius: BorderRadius.circular(16.0),
+              color: Colors.white,
+              child: InkWell(
+                onTap: onSearchTap,
+                borderRadius: BorderRadius.circular(16.0),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 14.0),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.search, color: Colors.grey, size: 24.0),
+                      SizedBox(width: 12.0),
+                      Expanded(
+                        child: Text(
+                          'Where to go?',
+                          style: TextStyle(color: Colors.black54, fontSize: 16.0, fontWeight: FontWeight.w500),
+                        ),
+                      ),
+                      Icon(Icons.location_on, color: Colors.redAccent, size: 24.0),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
     }
 
     return SafeArea(
@@ -199,7 +233,8 @@ class NavigationHudView extends StatelessWidget {
       case ManeuverType.depart:
         return Icons.navigation;
       case ManeuverType.straight:
-      default:
+        return Icons.straight;
+      case ManeuverType.unknown:
         return Icons.straight;
     }
   }

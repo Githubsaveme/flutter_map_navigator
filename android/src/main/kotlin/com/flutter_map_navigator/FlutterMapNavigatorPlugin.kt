@@ -13,13 +13,15 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
+import io.flutter.plugin.common.PluginRegistry
 
-class FlutterMapNavigatorPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
+class FlutterMapNavigatorPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, PluginRegistry.RequestPermissionsResultListener {
 
     private lateinit var methodChannel: MethodChannel
     private lateinit var locationEventChannel: EventChannel
     private lateinit var context: Context
     private var activity: Activity? = null
+    private var pendingPermissionResult: Result? = null
 
     private var eventSink: EventChannel.EventSink? = null
     private lateinit var locationService: LocationService
@@ -53,6 +55,22 @@ class FlutterMapNavigatorPlugin : FlutterPlugin, MethodCallHandler, ActivityAwar
         when (call.method) {
             "getLocationPermissionStatus" -> {
                 result.success(PermissionHelper.checkLocationStatus(context))
+            }
+            "requestWhenInUseAuthorization" -> {
+                if (activity != null) {
+                    pendingPermissionResult = result
+                    PermissionHelper.requestForegroundPermissions(activity)
+                } else {
+                    result.success(PermissionHelper.checkLocationStatus(context))
+                }
+            }
+            "requestAlwaysAuthorization" -> {
+                if (activity != null) {
+                    pendingPermissionResult = result
+                    PermissionHelper.requestBackgroundPermission(activity)
+                } else {
+                    result.success(PermissionHelper.checkLocationStatus(context))
+                }
             }
             "openSettings" -> {
                 PermissionHelper.openSettings(context)
@@ -129,6 +147,21 @@ class FlutterMapNavigatorPlugin : FlutterPlugin, MethodCallHandler, ActivityAwar
         }
     }
 
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ): Boolean {
+        if (requestCode == PermissionHelper.REQUEST_CODE_FOREGROUND ||
+            requestCode == PermissionHelper.REQUEST_CODE_BACKGROUND) {
+            val status = PermissionHelper.checkLocationStatus(context)
+            pendingPermissionResult?.success(status)
+            pendingPermissionResult = null
+            return true
+        }
+        return false
+    }
+
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         methodChannel.setMethodCallHandler(null)
         locationEventChannel.setStreamHandler(null)
@@ -136,6 +169,7 @@ class FlutterMapNavigatorPlugin : FlutterPlugin, MethodCallHandler, ActivityAwar
 
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
         activity = binding.activity
+        binding.addRequestPermissionsResultListener(this)
     }
 
     override fun onDetachedFromActivityForConfigChanges() {
@@ -144,6 +178,7 @@ class FlutterMapNavigatorPlugin : FlutterPlugin, MethodCallHandler, ActivityAwar
 
     override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
         activity = binding.activity
+        binding.addRequestPermissionsResultListener(this)
     }
 
     override fun onDetachedFromActivity() {

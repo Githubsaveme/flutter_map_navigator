@@ -17,7 +17,7 @@ abstract class RoutingProvider {
   });
 }
 
-/// Free, open-source OSRM routing engine implementation.
+/// Free, open-source OSRM routing engine implementation (No API key required).
 class OSRMProvider implements RoutingProvider {
   final String baseUrl;
   final http.Client _httpClient;
@@ -159,14 +159,14 @@ class OSRMProvider implements RoutingProvider {
   }
 }
 
-/// OpenRouteService Routing Provider.
+/// OpenRouteService Routing Provider (Falls back to free OSRM if no key provided).
 class OpenRouteServiceProvider implements RoutingProvider {
-  final String apiKey;
+  final String? apiKey;
   final String baseUrl;
   final http.Client _httpClient;
 
   OpenRouteServiceProvider({
-    required this.apiKey,
+    this.apiKey,
     this.baseUrl = 'https://api.openrouteservice.org/v2/directions',
     http.Client? httpClient,
   }) : _httpClient = httpClient ?? http.Client();
@@ -179,8 +179,8 @@ class OpenRouteServiceProvider implements RoutingProvider {
     VehicleType vehicleType = VehicleType.car,
     bool alternatives = false,
   }) async {
-    // Fallback to OSRM if no API key provided
-    if (apiKey.isEmpty) {
+    // Fallback to free open-source OSRM if no API key provided
+    if (apiKey == null || apiKey!.isEmpty) {
       return OSRMProvider().calculateRoute(
         origin: origin,
         destination: destination,
@@ -208,7 +208,7 @@ class OpenRouteServiceProvider implements RoutingProvider {
     try {
       final response = await _httpClient.post(
         url,
-        headers: {'Authorization': apiKey, 'Content-Type': 'application/json'},
+        headers: {'Authorization': apiKey!, 'Content-Type': 'application/json'},
         body: body,
       ).timeout(const Duration(seconds: 10));
 
@@ -246,7 +246,6 @@ class OpenRouteServiceProvider implements RoutingProvider {
         waypoints: [origin, ...waypoints, destination],
       );
     } catch (e) {
-      // Fallback to OSRM on error
       return OSRMProvider().calculateRoute(
         origin: origin,
         destination: destination,

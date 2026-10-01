@@ -1,3 +1,4 @@
+import 'package:flutter/widgets.dart';
 import 'package:latlong2/latlong.dart';
 
 enum VehicleType { car, truck, motorcycle, bicycle, pedestrian, bus }
@@ -11,6 +12,9 @@ class Vehicle {
   final double heading; // degrees (0..360)
   final double speed; // m/s
   final bool isOnline;
+  final String? iconAsset; // e.g. 'assets/car.png'
+  final String? iconUrl;   // Remote image URL from server
+  final Widget? customIconWidget; // Custom Flutter Widget
   final Map<String, dynamic> metadata;
   final DateTime lastUpdated;
 
@@ -22,6 +26,9 @@ class Vehicle {
     this.heading = 0.0,
     this.speed = 0.0,
     this.isOnline = true,
+    this.iconAsset,
+    this.iconUrl,
+    this.customIconWidget,
     this.metadata = const {},
     required this.lastUpdated,
   });
@@ -34,6 +41,9 @@ class Vehicle {
     double? heading,
     double? speed,
     bool? isOnline,
+    String? iconAsset,
+    String? iconUrl,
+    Widget? customIconWidget,
     Map<String, dynamic>? metadata,
     DateTime? lastUpdated,
   }) {
@@ -45,6 +55,9 @@ class Vehicle {
       heading: heading ?? this.heading,
       speed: speed ?? this.speed,
       isOnline: isOnline ?? this.isOnline,
+      iconAsset: iconAsset ?? this.iconAsset,
+      iconUrl: iconUrl ?? this.iconUrl,
+      customIconWidget: customIconWidget ?? this.customIconWidget,
       metadata: metadata ?? this.metadata,
       lastUpdated: lastUpdated ?? this.lastUpdated,
     );

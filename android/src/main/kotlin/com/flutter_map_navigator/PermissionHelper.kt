@@ -1,15 +1,20 @@
 package com.flutter_map_navigator
 
 import android.Manifest
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 
 object PermissionHelper {
+
+    const val REQUEST_CODE_FOREGROUND = 8801
+    const val REQUEST_CODE_BACKGROUND = 8802
 
     fun checkLocationStatus(context: Context): String {
         val hasFine = ContextCompat.checkSelfPermission(
@@ -36,6 +41,33 @@ object PermissionHelper {
             hasFine -> "precise"
             hasCoarse -> "approximate"
             else -> "foreground"
+        }
+    }
+
+    fun requestForegroundPermissions(activity: Activity?) {
+        if (activity == null) return
+        val permissions = mutableListOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        ActivityCompat.requestPermissions(
+            activity,
+            permissions.toTypedArray(),
+            REQUEST_CODE_FOREGROUND
+        )
+    }
+
+    fun requestBackgroundPermission(activity: Activity?) {
+        if (activity == null) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ActivityCompat.requestPermissions(
+                activity,
+                arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION),
+                REQUEST_CODE_BACKGROUND
+            )
         }
     }
 
